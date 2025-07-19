@@ -392,6 +392,48 @@ def eliminar_todas_solicitudes():
             'error': str(e)
         }), 500
 
+@app.route('/api/solicitudes/eliminar-seleccionadas', methods=['DELETE'])
+def eliminar_solicitudes_seleccionadas():
+    """API endpoint para eliminar solicitudes seleccionadas"""
+    try:
+        data = request.get_json()
+        ids = data.get('ids', [])
+        
+        if not ids:
+            return jsonify({
+                'success': False,
+                'error': 'No se proporcionaron IDs de solicitudes para eliminar'
+            }), 400
+        
+        # Verificar que los IDs sean válidos
+        solicitudes_a_eliminar = Solicitud.query.filter(Solicitud.id.in_(ids)).all()
+        
+        if not solicitudes_a_eliminar:
+            return jsonify({
+                'success': False,
+                'error': 'No se encontraron solicitudes con los IDs proporcionados'
+            }), 404
+        
+        # Contar solicitudes encontradas
+        total_encontradas = len(solicitudes_a_eliminar)
+        
+        # Eliminar las solicitudes seleccionadas
+        Solicitud.query.filter(Solicitud.id.in_(ids)).delete(synchronize_session=False)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'{total_encontradas} solicitudes eliminadas correctamente',
+            'eliminadas': total_encontradas
+        })
+            
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/descargar_solicitudes_excel')
 def descargar_excel():
     """Endpoint para descargar las solicitudes en formato Excel"""
