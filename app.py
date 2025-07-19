@@ -6,13 +6,13 @@ import pandas as pd
 from datetime import datetime
 import io
 from functools import wraps
+from config import config
 
 app = Flask(__name__)
 
-# Configuración básica
-app.config['SECRET_KEY'] = 'tu_clave_secreta_aqui_muy_segura_2025'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///solicitudes.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Configurar la aplicación según el entorno
+config_name = os.environ.get('FLASK_ENV', 'production')
+app.config.from_object(config.get(config_name, config['default']))
 
 # Inicializar SQLAlchemy
 db = SQLAlchemy(app)

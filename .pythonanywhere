@@ -1,0 +1,12 @@
+# Configuración para PythonAnywhere
+# Este archivo contiene configuraciones específicas para el despliegue
+
+# Variables de entorno
+FLASK_APP=app.py
+FLASK_ENV=production
+
+# Configuración de la base de datos
+DATABASE_URL=sqlite:///solicitudes.db
+
+# Configuración de seguridad
+SECRET_KEY=tu_clave_secreta_aqui_muy_segura_2025
