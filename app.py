@@ -338,29 +338,55 @@ def obtener_solicitud(solicitud_id):
 def eliminar_solicitud(solicitud_id):
     """API endpoint para eliminar una solicitud"""
     try:
-        solicitudes = cargar_solicitudes()
-        
-        # Filtrar la solicitud a eliminar
-        solicitudes_filtradas = [s for s in solicitudes if s.get('id') != solicitud_id]
-        
-        if len(solicitudes_filtradas) == len(solicitudes):
+        # Buscar la solicitud en la base de datos
+        solicitud = Solicitud.query.get(solicitud_id)
+        if not solicitud:
             return jsonify({
                 'success': False,
                 'error': 'Solicitud no encontrada'
             }), 404
         
-        if guardar_solicitudes(solicitudes_filtradas):
-            return jsonify({
-                'success': True,
-                'message': 'Solicitud eliminada correctamente'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Error al eliminar la solicitud'
-            }), 500
+        # Eliminar la solicitud
+        db.session.delete(solicitud)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Solicitud eliminada correctamente'
+        })
             
     except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/solicitudes/eliminar-todas', methods=['DELETE'])
+def eliminar_todas_solicitudes():
+    """API endpoint para eliminar todas las solicitudes"""
+    try:
+        # Contar solicitudes antes de eliminar
+        total_solicitudes = Solicitud.query.count()
+        
+        if total_solicitudes == 0:
+            return jsonify({
+                'success': False,
+                'error': 'No hay solicitudes para eliminar'
+            }), 404
+        
+        # Eliminar todas las solicitudes
+        Solicitud.query.delete()
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'{total_solicitudes} solicitudes eliminadas correctamente',
+            'eliminadas': total_solicitudes
+        })
+            
+    except Exception as e:
+        db.session.rollback()
         return jsonify({
             'success': False,
             'error': str(e)

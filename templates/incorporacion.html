@@ -331,6 +331,66 @@
         }
       };
 
+      const eliminarSolicitud = async (solicitudId) => {
+        if (!confirm('¿Está seguro de que desea eliminar esta solicitud? Esta acción no se puede deshacer.')) {
+          return;
+        }
+
+        try {
+          const response = await fetch(`/api/solicitudes/${solicitudId}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          });
+
+          const data = await response.json();
+          
+          if (data.success) {
+            // Recargar solicitudes para mostrar los cambios
+            await cargarSolicitudes();
+            alert('Solicitud eliminada correctamente');
+          } else {
+            alert(data.error || 'Error al eliminar solicitud');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          alert('Error al eliminar solicitud');
+        }
+      };
+
+      const eliminarTodasSolicitudes = async () => {
+        if (!confirm('¿Está seguro de que desea eliminar TODAS las solicitudes? Esta acción no se puede deshacer.')) {
+          return;
+        }
+
+        if (!confirm('Esta acción eliminará permanentemente todas las solicitudes. ¿Confirma que desea continuar?')) {
+          return;
+        }
+
+        try {
+          const response = await fetch('/api/solicitudes/eliminar-todas', {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          });
+
+          const data = await response.json();
+          
+          if (data.success) {
+            // Recargar solicitudes para mostrar los cambios
+            await cargarSolicitudes();
+            alert(`${data.eliminadas} solicitudes eliminadas correctamente`);
+          } else {
+            alert(data.error || 'Error al eliminar solicitudes');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+          alert('Error al eliminar solicitudes');
+        }
+      };
+
       // Modal de Login
       if (showLogin) {
         return (
@@ -701,8 +761,8 @@
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                               {userInfo?.rol === 'administrador' ? (
-                                // Vista de administrador - puede evaluar solicitudes
-                                <>
+                                // Vista de administrador - puede evaluar y eliminar solicitudes
+                                <div className="flex flex-col space-y-2">
                                   {solicitud.estado === 'Pendiente' && (
                                     <div className="flex space-x-2">
                                       <button
@@ -719,15 +779,23 @@
                                       </button>
                                     </div>
                                   )}
-                                  {solicitud.estado !== 'Pendiente' && (
+                                  <div className="flex space-x-2">
+                                    {solicitud.estado !== 'Pendiente' && (
+                                      <button
+                                        onClick={() => alert(`Detalles:\nEvaluador: ${solicitud.evaluador}\nObservaciones: ${solicitud.observaciones}`)}
+                                        className="btn-professional btn-outline text-xs px-3 py-1"
+                                      >
+                                        👁️ Ver Detalles
+                                      </button>
+                                    )}
                                     <button
-                                      onClick={() => alert(`Detalles:\nEvaluador: ${solicitud.evaluador}\nObservaciones: ${solicitud.observaciones}`)}
-                                      className="btn-professional btn-outline text-xs px-3 py-1"
+                                      onClick={() => eliminarSolicitud(solicitud.id)}
+                                      className="btn-professional bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1"
                                     >
-                                      👁️ Ver Detalles
+                                      🗑️ Eliminar
                                     </button>
-                                  )}
-                                </>
+                                  </div>
+                                </div>
                               ) : (
                                 // Vista de usuario regular - solo puede ver el estado
                                 <span className="text-gray-500 text-xs">
@@ -744,8 +812,8 @@
                   </table>
                 </div>
                 
-                {/* Botón de descarga debajo de la tabla */}
-                <div className="mt-6 flex justify-center">
+                {/* Botones de acción debajo de la tabla */}
+                <div className="mt-6 flex justify-center space-x-4 flex-wrap">
                   <button
                     onClick={() => window.open('/descargar_solicitudes_excel', '_blank')}
                     className="btn-professional btn-purple px-6 py-3 flex items-center space-x-2"
@@ -753,6 +821,16 @@
                     <span>📊</span>
                     <span>Descargar Excel</span>
                   </button>
+                  
+                  {userInfo?.rol === 'administrador' && solicitudes.length > 0 && (
+                    <button
+                      onClick={eliminarTodasSolicitudes}
+                      className="btn-professional bg-red-500 hover:bg-red-600 text-white px-6 py-3 flex items-center space-x-2"
+                    >
+                      <span>🗑️</span>
+                      <span>Eliminar Todas</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
