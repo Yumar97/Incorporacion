@@ -530,15 +530,21 @@ def internal_error(error):
         'status': 500
     }), 500
 
-# Inicialización para Vercel y desarrollo
-os.makedirs('static/css', exist_ok=True)
-os.makedirs('static/images', exist_ok=True)
-os.makedirs('templates', exist_ok=True)
+# Inicialización para PythonAnywhere
+try:
+    os.makedirs('static/css', exist_ok=True)
+    os.makedirs('static/images', exist_ok=True)
+    os.makedirs('templates', exist_ok=True)
+except:
+    pass
 
 # Crear las tablas de la base de datos
-with app.app_context():
-    db.create_all()
-    print("✅ Base de datos SQLite inicializada correctamente")
+try:
+    with app.app_context():
+        db.create_all()
+        print("✅ Base de datos SQLite inicializada correctamente")
+except Exception as e:
+    print(f"Error al inicializar BD: {e}")
 
 if __name__ == '__main__':
     print("🚀 Iniciando servidor de incorporación...")
