@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
 import os
 import json
 import pandas as pd
@@ -10,6 +11,47 @@ app = Flask(__name__)
 
 # Configuración básica
 app.config['SECRET_KEY'] = 'tu_clave_secreta_aqui_muy_segura_2025'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///solicitudes.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Inicializar SQLAlchemy
+db = SQLAlchemy(app)
+
+# Modelo de la base de datos
+class Solicitud(db.Model):
+    __tablename__ = 'solicitudes'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    nombres_completos = db.Column(db.String(200), nullable=False)
+    dni = db.Column(db.String(8), unique=True, nullable=False)
+    profesion = db.Column(db.String(100), nullable=False)
+    empresa = db.Column(db.String(200), nullable=False)
+    cargo = db.Column(db.String(100), nullable=False)
+    sector = db.Column(db.String(100), nullable=False)
+    fecha_nacimiento = db.Column(db.Date, nullable=False)
+    estado = db.Column(db.String(20), default='Pendiente', nullable=False)
+    evaluador = db.Column(db.String(100), nullable=True)
+    observaciones = db.Column(db.Text, nullable=True)
+    fecha_evaluacion = db.Column(db.DateTime, nullable=True)
+    
+    def to_dict(self):
+        """Convertir el objeto a diccionario"""
+        return {
+            'id': self.id,
+            'fecha': self.fecha.strftime('%Y-%m-%d %H:%M') if self.fecha else '',
+            'nombres_completos': self.nombres_completos,
+            'dni': self.dni,
+            'profesion': self.profesion,
+            'empresa': self.empresa,
+            'cargo': self.cargo,
+            'sector': self.sector,
+            'fecha_nacimiento': self.fecha_nacimiento.strftime('%Y-%m-%d') if self.fecha_nacimiento else '',
+            'estado': self.estado,
+            'evaluador': self.evaluador or '',
+            'observaciones': self.observaciones or '',
+            'fecha_evaluacion': self.fecha_evaluacion.strftime('%Y-%m-%d %H:%M') if self.fecha_evaluacion else ''
+        }
 
 # Usuarios del sistema
 USUARIOS = {
@@ -164,8 +206,8 @@ def get_session():
 def obtener_solicitudes():
     """API endpoint para obtener todas las solicitudes"""
     try:
-        solicitudes = cargar_solicitudes()
-        return jsonify(solicitudes)
+        solicitudes = Solicitud.query.all()
+        return jsonify([solicitud.to_dict() for solicitud in solicitudes])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -188,49 +230,46 @@ def crear_solicitud():
                     'error': f'El campo {campo} es requerido'
                 }), 400
         
-        # Cargar solicitudes existentes
-        solicitudes = cargar_solicitudes()
-        
         # Verificar si ya existe una solicitud con el mismo DNI
-        dni_existente = any(s.get('dni') == data.get('dni') for s in solicitudes)
-        if dni_existente:
+        solicitud_existente = Solicitud.query.filter_by(dni=data.get('dni')).first()
+        if solicitud_existente:
             return jsonify({
                 'success': False,
                 'error': 'Ya existe una solicitud con este DNI'
             }), 400
         
-        # Crear nueva solicitud
-        nueva_solicitud = {
-            'id': obtener_siguiente_id(),
-            'fecha': datetime.now().strftime('%Y-%m-%d %H:%M'),
-            'nombres_completos': data.get('nombres_completos'),
-            'dni': data.get('dni'),
-            'profesion': data.get('profesion'),
-            'empresa': data.get('empresa'),
-            'cargo': data.get('cargo'),
-            'sector': data.get('sector'),
-            'fecha_nacimiento': data.get('fecha_nacimiento'),
-            'estado': 'Pendiente',
-            'evaluador': '',
-            'observaciones': ''
-        }
-        
-        # Agregar a la lista y guardar
-        solicitudes.append(nueva_solicitud)
-        
-        if guardar_solicitudes(solicitudes):
-            return jsonify({
-                'success': True,
-                'id': nueva_solicitud['id'],
-                'message': 'Solicitud creada correctamente'
-            })
-        else:
+        # Convertir fecha de nacimiento
+        try:
+            fecha_nacimiento = datetime.strptime(data.get('fecha_nacimiento'), '%Y-%m-%d').date()
+        except ValueError:
             return jsonify({
                 'success': False,
-                'error': 'Error al guardar la solicitud'
-            }), 500
+                'error': 'Formato de fecha de nacimiento inválido'
+            }), 400
+        
+        # Crear nueva solicitud
+        nueva_solicitud = Solicitud(
+            nombres_completos=data.get('nombres_completos'),
+            dni=data.get('dni'),
+            profesion=data.get('profesion'),
+            empresa=data.get('empresa'),
+            cargo=data.get('cargo'),
+            sector=data.get('sector'),
+            fecha_nacimiento=fecha_nacimiento
+        )
+        
+        # Guardar en la base de datos
+        db.session.add(nueva_solicitud)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'id': nueva_solicitud.id,
+            'message': 'Solicitud creada correctamente'
+        })
             
     except Exception as e:
+        db.session.rollback()
         return jsonify({
             'success': False,
             'error': str(e)
@@ -241,42 +280,36 @@ def actualizar_solicitud(solicitud_id):
     """API endpoint para actualizar una solicitud (evaluación)"""
     try:
         data = request.get_json()
-        solicitudes = cargar_solicitudes()
         
         # Buscar la solicitud
-        solicitud_encontrada = None
-        for i, solicitud in enumerate(solicitudes):
-            if solicitud.get('id') == solicitud_id:
-                solicitud_encontrada = i
-                break
-        
-        if solicitud_encontrada is None:
+        solicitud = Solicitud.query.get(solicitud_id)
+        if not solicitud:
             return jsonify({
                 'success': False,
                 'error': 'Solicitud no encontrada'
             }), 404
         
         # Actualizar campos permitidos
-        campos_actualizables = ['estado', 'evaluador', 'observaciones']
-        for campo in campos_actualizables:
-            if campo in data:
-                solicitudes[solicitud_encontrada][campo] = data[campo]
+        if 'estado' in data:
+            solicitud.estado = data['estado']
+        if 'evaluador' in data:
+            solicitud.evaluador = data['evaluador']
+        if 'observaciones' in data:
+            solicitud.observaciones = data['observaciones']
         
         # Agregar fecha de evaluación
-        solicitudes[solicitud_encontrada]['fecha_evaluacion'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+        solicitud.fecha_evaluacion = datetime.utcnow()
         
-        if guardar_solicitudes(solicitudes):
-            return jsonify({
-                'success': True,
-                'message': 'Solicitud actualizada correctamente'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Error al actualizar la solicitud'
-            }), 500
+        # Guardar cambios
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Solicitud actualizada correctamente'
+        })
             
     except Exception as e:
+        db.session.rollback()
         return jsonify({
             'success': False,
             'error': str(e)
@@ -337,15 +370,18 @@ def eliminar_solicitud(solicitud_id):
 def descargar_excel():
     """Endpoint para descargar las solicitudes en formato Excel"""
     try:
-        solicitudes = cargar_solicitudes()
+        solicitudes = Solicitud.query.all()
         
         if not solicitudes:
             return jsonify({
                 'error': 'No hay solicitudes para descargar'
             }), 404
         
+        # Convertir a diccionarios
+        solicitudes_dict = [solicitud.to_dict() for solicitud in solicitudes]
+        
         # Crear DataFrame
-        df = pd.DataFrame(solicitudes)
+        df = pd.DataFrame(solicitudes_dict)
         
         # Reordenar columnas para mejor presentación (sin evaluador y observaciones)
         columnas_orden = [
@@ -434,28 +470,25 @@ def descargar_excel():
 def obtener_estadisticas():
     """API endpoint para obtener estadísticas de las solicitudes"""
     try:
-        solicitudes = cargar_solicitudes()
+        solicitudes = Solicitud.query.all()
         
         total = len(solicitudes)
-        pendientes = len([s for s in solicitudes if s.get('estado') == 'Pendiente'])
-        aprobadas = len([s for s in solicitudes if s.get('estado') == 'Aprobado'])
-        rechazadas = len([s for s in solicitudes if s.get('estado') == 'Rechazado'])
+        pendientes = len([s for s in solicitudes if s.estado == 'Pendiente'])
+        aprobadas = len([s for s in solicitudes if s.estado == 'Aprobado'])
+        rechazadas = len([s for s in solicitudes if s.estado == 'Rechazado'])
         
         # Estadísticas por sector
         sectores = {}
         for solicitud in solicitudes:
-            sector = solicitud.get('sector', 'No especificado')
+            sector = solicitud.sector or 'No especificado'
             sectores[sector] = sectores.get(sector, 0) + 1
         
         # Estadísticas por mes
         solicitudes_por_mes = {}
         for solicitud in solicitudes:
-            try:
-                fecha = datetime.strptime(solicitud.get('fecha', ''), '%Y-%m-%d %H:%M')
-                mes_año = fecha.strftime('%Y-%m')
+            if solicitud.fecha:
+                mes_año = solicitud.fecha.strftime('%Y-%m')
                 solicitudes_por_mes[mes_año] = solicitudes_por_mes.get(mes_año, 0) + 1
-            except:
-                pass
         
         return jsonify({
             'total': total,
@@ -497,18 +530,20 @@ def internal_error(error):
         'status': 500
     }), 500
 
-# Inicialización para Vercel
+# Inicialización para Vercel y desarrollo
 os.makedirs('static/css', exist_ok=True)
 os.makedirs('static/images', exist_ok=True)
 os.makedirs('templates', exist_ok=True)
 
-# Crear archivo de solicitudes si no existe
-if not os.path.exists(SOLICITUDES_FILE):
-    guardar_solicitudes([])
+# Crear las tablas de la base de datos
+with app.app_context():
+    db.create_all()
+    print("✅ Base de datos SQLite inicializada correctamente")
 
 if __name__ == '__main__':
     print("🚀 Iniciando servidor de incorporación...")
     print("📋 Sistema de gestión para nuevos asociados")
+    print("🗄️ Base de datos: SQLite (solicitudes.db)")
     print("🌐 Accede a: http://localhost:5000")
     print("📊 API disponible en: http://localhost:5000/api/")
     
